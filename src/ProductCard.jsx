@@ -36,7 +36,7 @@ function getProductAssetUrl(filePath) {
   }
 
   return publicUrl;
-}
+}   
 
 
 const PLACEHOLDER_IMG = 'https://via.placeholder.com/400x300?text=No+Media'
