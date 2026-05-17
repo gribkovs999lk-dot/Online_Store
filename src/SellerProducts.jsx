@@ -152,19 +152,20 @@ function SellerProducts({ session }) {
       throw uploadError
     }
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('product-assets').getPublicUrl(filePath)
-  
-    // Проверяем, что код работает в браузере и это не локальный компьютер (localhost)
-    const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
-  
-    // Если это продакшен на Vercel, подменяем заблокированный домен на наш рабочий прокси
-    return isProd 
-      ? publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`)
-      : publicUrl
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from('product-assets').getPublicUrl(filePath)
+
+  // Переписываем ссылку: если мы в браузере, всегда пускаем запрос через текущий домен /supabase
+  if (typeof window !== 'undefined') {
+    return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`)
   }
 
+  return publicUrl
+  }
+
+  
   const openEditModal = (product) => {
     setEditingProduct(product)
     setEditForm({

@@ -86,14 +86,13 @@ function SellerDashboard({ session }) {
       data: { publicUrl },
     } = supabase.storage.from('product-assets').getPublicUrl(filePath)
   
-    // Проверяем, что код работает в браузере и это не локальный компьютер (localhost)
-    const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost')
+    // Переписываем ссылку: если мы в браузере, всегда пускаем запрос через текущий домен /supabase
+    if (typeof window !== 'undefined') {
+      return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`)
+    }
   
-    // Если это продакшен на Vercel, подменяем заблокированный домен на наш рабочий прокси
-    return isProd 
-      ? publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`)
-      : publicUrl
-  }
+    return publicUrl
+    }
 
   const handleCreateProduct = async (event) => {
     event.preventDefault()
