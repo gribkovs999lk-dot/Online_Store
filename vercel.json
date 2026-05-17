@@ -1,9 +1,12 @@
 {
-  "version": 2,
   "rewrites": [
     {
       "source": "/supabase/:path*",
       "destination": "https://yzwfkcwqtakglfzkoccy.supabase.co/:path*"
+    },
+    {
+      "source": "/((?!supabase).*)",
+      "destination": "/index.html"
     }
   ]
 }

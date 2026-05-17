@@ -7,6 +7,33 @@ import { supabase } from './supabaseClient'
 import 'swiper/css'
 import 'swiper/css/pagination'
 
+function getProductAssetUrl(filePath) {
+  if (!filePath) return '';
+
+  // Если это уже локальная blob-ссылка для превью, не трогаем её
+  if (filePath.startsWith('blob:')) return filePath;
+
+  // Если filePath случайно пришёл как полная ссылка, берём только хвостик
+  let cleanPath = filePath;
+  if (filePath.includes('public/product-assets/')) {
+    cleanPath = filePath.split('public/product-assets/')[1];
+  }
+
+  // Получаем чистый URL от Supabase (синхронно, без await!)
+  const { data } = supabase.storage.from('product-assets').getPublicUrl(cleanPath);
+  const publicUrl = data?.publicUrl;
+
+  if (!publicUrl) return '';
+
+  // Всегда принудительно делаем замену домена в браузере
+  if (typeof window !== 'undefined') {
+    return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`);
+  }
+
+  return publicUrl;
+}
+
+
 const PLACEHOLDER_IMG = 'https://via.placeholder.com/400x300?text=No+Media'
 
 const mediaHeight = { width: '100%', height: '280px' }
@@ -99,7 +126,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
             <SwiperSlide key={slide.key} className="!flex items-center justify-center bg-slate-100">
               {slide.kind === 'model' ? (
                 <model-viewer
-                  src={slide.src}
+                  src={getProductAssetUrl(slide.src)}
                   poster={slide.poster}
                   alt={name}
                   ar
@@ -110,7 +137,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
                 />
               ) : (
                 <img
-                  src={slide.url}
+                  src={getProductAssetUrl(slide.src)}
                   alt={name}
                   className="h-[280px] w-full object-cover"
                   loading={index === 0 ? 'eager' : 'lazy'}
