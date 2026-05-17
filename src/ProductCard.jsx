@@ -9,25 +9,30 @@ import 'swiper/css/pagination'
 
 function getProductAssetUrl(filePath) {
   if (!filePath) return '';
-
-  // Если это уже локальная blob-ссылка для превью, не трогаем её
+  
+  // 1. Если это временное локальное превью (blob:), не трогаем его
   if (filePath.startsWith('blob:')) return filePath;
 
-  // Если filePath случайно пришёл как полная ссылка, берём только хвостик
   let cleanPath = filePath;
-  if (filePath.includes('public/product-assets/')) {
-    cleanPath = filePath.split('public/product-assets/')[1];
+
+  // 2. ЛЕЧИМ ОШИБКУ №1: Если в базе лежит полная ссылка, выковыриваем из неё только чистый путь к файлу
+  if (cleanPath.includes('public/product-assets/')) {
+    cleanPath = cleanPath.split('public/product-assets/')[1];
   }
 
-  // Получаем чистый URL от Supabase (синхронно, без await!)
+  // 3. Получаем базовый URL от Supabase (строго БЕЗ await)
   const { data } = supabase.storage.from('product-assets').getPublicUrl(cleanPath);
   const publicUrl = data?.publicUrl;
 
   if (!publicUrl) return '';
 
-  // Всегда принудительно делаем замену домена в браузере
+  // 4. ЛЕЧИМ ОШИБКУ №2: Жестко и принудительно меняем весь домен Supabase на прокси-путь твоего сайта
   if (typeof window !== 'undefined') {
-    return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${window.location.origin}/supabase`);
+    // Берём адрес твоего текущего сайта (хоть localhost, хоть vercel.app)
+    const currentOrigin = window.location.origin; 
+    
+    // Меняем старый домен Supabase целиком вместе с протоколом на "твой_домен/supabase"
+    return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${currentOrigin}/supabase`);
   }
 
   return publicUrl;
