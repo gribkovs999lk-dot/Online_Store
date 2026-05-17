@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Pagination } from 'swiper/modules'
 import { useCartStore } from './cartStore'
-import { supabase } from './supabaseClient'
+import { supabase } from '../supabaseClient'
 
 import 'swiper/css'
 import 'swiper/css/pagination'
@@ -21,19 +21,16 @@ function getProductAssetUrl(filePath) {
     cleanPath = cleanPath.split('product-assets/')[1];
   }
 
-  // 3. Получаем чистый URL от Supabase
-  const { data } = supabase.storage.from('product-assets').getPublicUrl(cleanPath);
-  const publicUrl = data?.publicUrl;
+  // На всякий случай убираем случайные лишние слэши в начале пути
+  cleanPath = cleanPath.replace(/^\/+/, '');
 
-  if (!publicUrl) return '';
-
-  // 4. Подменяем домен Supabase на прокси твоего сайта
+  // 3. Подменяем домен Supabase на прокси твоего сайта
   if (typeof window !== 'undefined') {
     const currentOrigin = window.location.origin; 
-    return publicUrl.replace('https://yzwfkcwqtakglfzkoccy.supabase.co', `${currentOrigin}/supabase`);
+    return `${currentOrigin}/supabase/storage/v1/object/public/product-assets/${cleanPath}`;
   }
 
-  return publicUrl;
+  return `https://yzwfkcwqtakglfzkoccy.supabase.co/storage/v1/object/public/product-assets/${cleanPath}`;
 }   
 
 
@@ -140,7 +137,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
                 />
               ) : (
                 <img
-                  src={getProductAssetUrl(slide.src)}
+                  src={getProductAssetUrl(slide.url)} // <-- ИСПРАВЛЕНО НА slide.url!
                   alt={name}
                   className="h-[280px] w-full object-cover"
                   loading={index === 0 ? 'eager' : 'lazy'}
