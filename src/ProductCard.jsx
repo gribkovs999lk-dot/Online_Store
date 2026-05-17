@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Pagination } from 'swiper/modules'
 import { useCartStore } from './cartStore'
-import { supabase } from '../supabaseClient'
+import { supabase } from './supabaseClient'
 
 import 'swiper/css'
 import 'swiper/css/pagination'
