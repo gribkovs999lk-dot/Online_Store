@@ -14,7 +14,21 @@ const formatPrice = (value) => {
 
 const statusMeta = {
   pending: { label: 'В обработке', className: 'bg-amber-100 text-amber-900 ring-amber-200' },
+  processing: { label: 'В работе', className: 'bg-sky-100 text-sky-900 ring-sky-200' },
   completed: { label: 'Выполнен', className: 'bg-emerald-100 text-emerald-900 ring-emerald-200' },
+  delivered: { label: 'Доставлен', className: 'bg-emerald-100 text-emerald-900 ring-emerald-200' },
+  cancelled: { label: 'Отменён', className: 'bg-slate-200 text-slate-800 ring-slate-300' },
+}
+
+function isOrderDelivered(status) {
+  const key = String(status || '').toLowerCase()
+  return key === 'delivered' || key === 'completed'
+}
+
+function canCustomerCancelOrder(status) {
+  const key = String(status || '').toLowerCase()
+  if (key === 'cancelled') return false
+  return !isOrderDelivered(status)
 }
 
 function StatusBadge({ status }) {
@@ -39,6 +53,7 @@ function Orders({ session }) {
   const [expanded, setExpanded] = useState(() => new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [cancellingId, setCancellingId] = useState(null)
 
   const toggle = (orderId) => {
     setExpanded((prev) => {
@@ -136,6 +151,34 @@ function Orders({ session }) {
     load()
   }, [load])
 
+  const handleCancelOrder = async (orderId) => {
+    const userId = session?.user?.id
+    if (!userId || !orderId) return
+
+    const order = orders.find((o) => o.id === orderId)
+    if (!order || !canCustomerCancelOrder(order.status)) return
+
+    if (!window.confirm('Отменить этот заказ?')) return
+
+    setCancellingId(orderId)
+    setError(null)
+
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ status: 'cancelled' })
+      .eq('id', orderId)
+      .eq('user_id', userId)
+
+    setCancellingId(null)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o)))
+  }
+
   if (!session?.user?.id) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm">
@@ -221,6 +264,18 @@ function Orders({ session }) {
 
                 {isOpen && (
                   <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-4">
+                    {canCustomerCancelOrder(order.status) && (
+                      <div className="mb-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleCancelOrder(id)}
+                          disabled={cancellingId === id}
+                          className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                        >
+                          {cancellingId === id ? 'Отмена…' : 'Отменить заказ'}
+                        </button>
+                      </div>
+                    )}
                     {(order.full_name || order.email || order.phone || order.address) && (
                       <dl className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
                         {order.full_name && (

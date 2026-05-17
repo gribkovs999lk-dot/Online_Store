@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
-const STATUSES = ['pending', 'processing', 'completed']
+const STATUSES = ['pending', 'processing', 'completed', 'delivered', 'cancelled']
 const DEFAULT_ROLES = ['buyer', 'seller', 'admin']
 
 const formatPrice = (value) => {
@@ -18,12 +18,16 @@ function Admin() {
   const [activeTab, setActiveTab] = useState('orders')
   const [orders, setOrders] = useState([])
   const [profiles, setProfiles] = useState([])
+  const [products, setProducts] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(true)
   const [profilesLoading, setProfilesLoading] = useState(true)
+  const [productsLoading, setProductsLoading] = useState(true)
   const [ordersError, setOrdersError] = useState(null)
   const [profilesError, setProfilesError] = useState(null)
+  const [productsError, setProductsError] = useState(null)
   const [updatingId, setUpdatingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [deletingProductId, setDeletingProductId] = useState(null)
   const [updatingProfileId, setUpdatingProfileId] = useState(null)
 
   const loadOrders = useCallback(async () => {
@@ -66,10 +70,32 @@ function Admin() {
     setProfilesLoading(false)
   }, [])
 
+  const loadProducts = useCallback(async () => {
+    setProductsLoading(true)
+    setProductsError(null)
+
+    const { data, error: fetchError } = await supabase
+      .from('products')
+      .select('id, name, price, seller_id, category_id')
+      .order('id', { ascending: false })
+      .eq('is_deleted', false)
+
+    if (fetchError) {
+      setProductsError(fetchError.message)
+      setProducts([])
+      setProductsLoading(false)
+      return
+    }
+
+    setProducts(data ?? [])
+    setProductsLoading(false)
+  }, [])
+
   useEffect(() => {
     loadOrders()
     loadProfiles()
-  }, [loadOrders, loadProfiles])
+    loadProducts()
+  }, [loadOrders, loadProfiles, loadProducts])
 
   const handleStatusChange = async (orderId, newStatus) => {
     setUpdatingId(orderId)
@@ -112,12 +138,39 @@ function Admin() {
     }
   }
 
+  const handleDeleteProduct = async (productId) => {
+    if (!window.confirm('Вы уверены, что хотите удалить этот товар из каталога?')) return
+
+    setDeletingProductId(productId)
+    setProductsError(null)
+
+    // ИСПРАВЛЕНИЕ: Вместо физического удаления .delete() 
+    // делаем .update() и переводим флаг is_deleted в true
+    const { error: deleteError } = await supabase
+      .from('products')
+      .update({ is_deleted: true })
+      .eq('id', productId)
+
+    setDeletingProductId(null)
+
+    if (deleteError) {
+      setProductsError(deleteError.message)
+      window.alert(`Ошибка: ${deleteError.message}`)
+      return
+    }
+
+    // Обновляем состояние UI, чтобы товар мгновенно исчез с экрана
+    setProducts(prevProducts => prevProducts.filter(product => product.id !== productId))
+    
+    window.alert('Товар успешно удален из каталога!')
+  }
+
   const handleToggleBlocked = async (profile) => {
     setUpdatingProfileId(profile.id)
     setProfilesError(null)
 
     try {
-      const nextValue = !Boolean(profile.is_blocked)
+      const nextValue = !profile.is_blocked
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ is_blocked: nextValue })
@@ -165,7 +218,7 @@ function Admin() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Панель администратора</h1>
           <p className="mt-1 text-sm text-slate-600">Управление заказами и пользователями</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('orders')}
@@ -176,6 +229,17 @@ function Admin() {
             }`}
           >
             Заказы
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('products')}
+            className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+              activeTab === 'products'
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            Товары
           </button>
           <button
             type="button"
@@ -260,6 +324,71 @@ function Admin() {
                           className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                         >
                           Удалить заказ
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'products' && (
+        <>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => loadProducts()}
+              disabled={productsLoading}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              Обновить
+            </button>
+          </div>
+
+          {productsLoading && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600 shadow-sm">
+              Загрузка товаров...
+            </div>
+          )}
+
+          {!productsLoading && productsError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm">{productsError}</div>
+          )}
+
+          {!productsLoading && !productsError && products.length === 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600 shadow-sm">Товаров нет.</div>
+          )}
+
+          {!productsLoading && !productsError && products.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">ID</th>
+                    <th className="px-4 py-3">Название</th>
+                    <th className="px-4 py-3 text-right">Цена</th>
+                    <th className="px-4 py-3">Продавец</th>
+                    <th className="px-4 py-3 text-right">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {products.map((product) => (
+                    <tr key={product.id}>
+                      <td className="px-4 py-3 font-mono text-xs">{product.id}</td>
+                      <td className="px-4 py-3">{product.name || '—'}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatPrice(product.price)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{product.seller_id ? String(product.seller_id).slice(0, 8) + '…' : '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProduct(product.id)}
+                          disabled={deletingProductId === product.id}
+                          className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Удалить
                         </button>
                       </td>
                     </tr>

@@ -7,16 +7,33 @@ import Auth from './Auth'
 import Orders from './Orders'
 import Admin from './Admin'
 import SellerDashboard from './SellerDashboard'
+import SellerProducts from './SellerProducts'
+import ProductCard from './ProductCard'
 
 function App() {
   const [session, setSession] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [accountBlockedNotice, setAccountBlockedNotice] = useState(false)
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [productsLoading, setProductsLoading] = useState(true)
   const [error, setError] = useState(null)
-  const addToCart = useCartStore((state) => state.addToCart)
   const cartItems = useCartStore((state) => state.items)
+
+  const fetchRole = async (userId) => {
+    const { data } = await supabase.from('profiles').select('role, is_blocked').eq('id', userId).single()
+
+    if (data?.is_blocked === true) {
+      setAccountBlockedNotice(true)
+      setUserRole(null)
+      await supabase.auth.signOut()
+      setLoading(false)
+      return
+    }
+
+    if (data) setUserRole(data.role)
+    setLoading(false)
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
@@ -45,19 +62,14 @@ function App() {
     }
   }, [])
 
-  async function fetchRole(userId) {
-    const { data } = await supabase.from('profiles').select('role').eq('id', userId).single()
-
-    if (data) setUserRole(data.role)
-    setLoading(false)
-  }
-
   useEffect(() => {
     const loadProducts = async () => {
       setProductsLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase.from('products').select('*')
+      const { data, error: fetchError } = await supabase.from('products')
+      .select('*')
+      .eq('is_deleted', false)
 
       if (fetchError) {
         setError(fetchError.message)
@@ -72,78 +84,127 @@ function App() {
     loadProducts()
   }, [])
 
-  const formatPrice = (price) => {
-    const numericPrice = Number(price)
-
-    if (Number.isNaN(numericPrice)) {
-      return 'Цена не указана'
-    }
-
-    return new Intl.NumberFormat('ru-RU', {
-      style: 'currency',
-      currency: 'RUB',
-      maximumFractionDigits: 0,
-    }).format(numericPrice)
+  if (accountBlockedNotice) {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-slate-900 px-6 text-center">
+        <p className="max-w-md text-lg font-medium text-white">
+          Ваш аккаунт заблокирован. Обратитесь в службу поддержки.
+        </p>
+      </div>
+    )
   }
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center">Загрузка...</div>
   }
 
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Шапка сайта */}
-      <nav className="sticky top-0 z-50 bg-white p-4 shadow-sm">
-        <div className="container mx-auto flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold">
-            3D Store
+      <nav className="sticky top-0 z-50 border-b border-gray-100 bg-white/80 backdrop-blur-md">
+        <div className="container mx-auto flex h-16 items-center justify-between px-4">
+          {/* Логотип */}
+          <Link to="/" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 font-bold text-white">
+              D
+            </div>
+            <span className="text-xl font-bold tracking-tight text-gray-900">3d-Store</span>
           </Link>
-          <div className="flex items-center gap-3">
+
+          {/* Центральное меню (для всех) */}
+          <div className="hidden gap-6 text-sm font-medium text-gray-600 md:flex">
+            <Link to="/" className="transition hover:text-blue-600">
+              Каталог
+            </Link>
+            <Link to="/about" className="transition hover:text-blue-600">
+              О проекте
+            </Link>
+          </div>
+
+          {/* Правая часть: Профиль и Корзина */}
+          <div className="flex items-center gap-4">
             {session ? (
               <>
-                <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 sm:flex">
+                {/* Почта сессии */}
+                <div className="hidden max-w-[14rem] items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex">
                   <span aria-hidden="true">👤</span>
-                  <span className="max-w-48 truncate">{session.user.email}</span>
+                  <span className="truncate" title={session.user.email}>
+                    {session.user.email}
+                  </span>
                 </div>
+
+                {/* Кнопки панелей (только если админ/продавец) */}
+                {userRole === 'admin' && (
+                  <Link
+                    to="/admin"
+                    className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                  >
+                    Админ
+                  </Link>
+                )}
+                {userRole === 'seller' && (
+                  <Link
+                    to="/seller"
+                    className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-600 transition hover:bg-green-100"
+                  >
+                    Продавец
+                  </Link>
+                )}
+
+                <Link
+                  to="/orders"
+                  className="whitespace-nowrap rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:border-blue-200 hover:text-blue-600"
+                >
+                  Мои заказы
+                </Link>
+                {(userRole === 'seller' || userRole === 'admin') && (
+                  <Link
+                    to="/seller/my-products"
+                    className="whitespace-nowrap rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:border-blue-200 hover:text-blue-600"
+                  >
+                    Мои товары
+                  </Link>
+                )}
+
+                {/* Иконка корзины (для покупателей и продавцов) */}
+                <Link
+                  to="/cart"
+                  className="relative rounded-full p-2 text-gray-600 transition hover:bg-gray-50"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-6 w-6"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+                    />
+                  </svg>
+                  <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+                    {cartItems.length}
+                  </span>
+                </Link>
+
                 <button
+                  type="button"
                   onClick={() => supabase.auth.signOut()}
-                  className="rounded-lg border border-red-200 px-4 py-2 text-red-600"
+                  className="text-sm font-semibold text-gray-700 transition hover:text-red-600"
                 >
                   Выйти
                 </button>
               </>
             ) : (
-              <Link to="/auth" className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700">
-                Вход
-              </Link>
-            )}
-            {session && (
               <Link
-                to="/orders"
-                className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700 transition hover:text-blue-500"
+                to="/auth"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
               >
-                Мои заказы
+                Войти
               </Link>
             )}
-            {(userRole === 'seller' || userRole === 'admin') && (
-              <Link to="/my-products" className="text-blue-600">
-                Мои товары
-              </Link>
-            )}
-            {userRole === 'admin' && (
-              <Link to="/admin" className="text-red-600 font-bold">
-                Панель управления (Admin)
-              </Link>
-            )}
-            {userRole === 'seller' && (
-              <Link to="/seller" className="font-bold text-green-600 hover:underline">
-                Панель продавца
-              </Link>
-            )}
-            <Link to="/cart" className="rounded-lg bg-blue-600 px-4 py-2 text-white">
-              Корзина ({cartItems.length})
-            </Link>
           </div>
         </div>
       </nav>
@@ -174,49 +235,18 @@ function App() {
               )}
 
               {!productsLoading && !error && products.length > 0 && (
-                <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                  {products.map((product) => {
-                    const modelSrc = product.model_url ?? product.modelUrl ?? product.model_3d_url ?? ''
-
-                    return (
-                      <article
-                        key={product.id ?? product.name}
-                        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
-                      >
-                        <div className="h-64 w-full bg-slate-100">
-                          {modelSrc ? (
-                            <model-viewer
-                              src={modelSrc}
-                              alt={product.name ?? '3D модель товара'}
-                              camera-controls
-                              auto-rotate
-                              class="h-full w-full"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500">
-                              3D-модель отсутствует
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-2 p-5">
-                          <h2 className="line-clamp-2 text-lg font-semibold text-slate-900">
-                            {product.name ?? 'Без названия'}
-                          </h2>
-                          <p className="text-base font-medium text-slate-700">
-                            {formatPrice(product.price)}
-                          </p>
-                          <button
-                            onClick={() => addToCart(product)}
-                            className="mt-4 w-full rounded-lg bg-blue-600 py-2 text-white"
-                          >
-                            Добавить в корзину ({cartItems.filter((i) => i.id === product.id).length})
-                          </button>
-                        </div>
-                      </article>
-                    )
-                  })}
-                </section>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                  {products.map((product) => (
+                    <ProductCard
+                      key={product.id ?? product.name}
+                      product={product}
+                      isAdmin={userRole === 'admin'}
+                      onProductDeleted={(id) =>
+                        setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)))
+                      }
+                    />
+                  ))}
+                </div>
               )}
             </div>
           }
@@ -238,32 +268,31 @@ function App() {
           path="/admin"
           element={userRole === 'admin' ? <Admin /> : <Navigate to="/" />}
         />
+
+        {/* Страница управления товарами (добавление) */}
+        <Route path="/seller/dashboard" element={<SellerDashboard session={session} />} />
+
+        {/* Страница статистики продаж (кто купил мои товары) */}
+        <Route path="/seller/my-products" element={<SellerProducts session={session} />} />
+
+        <Route path="/seller" element={<Navigate to="/seller/dashboard" replace />} />
+
         <Route
-          path="/seller"
-          element={userRole === 'seller' ? <SellerDashboard /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/my-products"
+          path="/about"
           element={
-            session ? (
-              userRole === 'seller' || userRole === 'admin' ? (
-                <div className="container mx-auto p-4">
-                  <SellerDashboard session={session} />
-                </div>
-              ) : (
-                <Navigate to="/" replace />
-              )
-            ) : (
-              <Navigate to="/auth" replace />
-            )
+            <div className="container mx-auto max-w-2xl px-4 py-12">
+              <h1 className="text-3xl font-bold text-gray-900">О проекте</h1>
+              <p className="mt-4 text-gray-600">
+                Dimension — каталог 3D-товаров с удобной корзиной и заказами.
+              </p>
+            </div>
           }
         />
+
         <Route path="/auth" element={<Auth />} />
       </Routes>
     </div>
   )
-
-  
 }
 
 export default App
