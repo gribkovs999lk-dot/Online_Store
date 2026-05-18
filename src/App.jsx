@@ -9,6 +9,7 @@ import Admin from './Admin'
 import SellerDashboard from './SellerDashboard'
 import SellerProducts from './SellerProducts'
 import ProductCard from './ProductCard'
+import ProductPage from './ProductPage'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -290,6 +291,7 @@ function App() {
         />
 
         <Route path="/auth" element={<Auth />} />
+        <Route path="/product/:id" element={<ProductPage />} />
       </Routes>
     </div>
   )

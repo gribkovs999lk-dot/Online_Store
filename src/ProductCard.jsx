@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Pagination } from 'swiper/modules'
 import { useCartStore } from './cartStore'
@@ -94,8 +95,10 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
   }, [product, productId])
 
   const name = typeof product.name === 'string' ? product.name : product.name == null ? 'Без названия' : String(product.name)
+  const productHref = productId != null ? `/product/${productId}` : null
 
-  const handleAdminDelete = async () => {
+  const handleAdminDelete = async (event) => {
+    event.stopPropagation()
     if (!isAdmin || productId == null) return
     if (!window.confirm('Удалить этот товар из каталога? Это действие нельзя отменить.')) return
 
@@ -124,10 +127,36 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
         >
           {slides.map((slide, index) => (
             <SwiperSlide key={slide.key} className="!flex items-center justify-center bg-slate-100">
-              {slide.kind === 'model' ? (
+              {productHref ? (
+                <Link
+                  to={productHref}
+                  className="flex h-full w-full items-center justify-center"
+                  aria-label={`Открыть «${name}»`}
+                >
+                  {slide.kind === 'model' ? (
+                    <model-viewer
+                      src={getProductAssetUrl(slide.src)}
+                      poster={slide.poster ? getProductAssetUrl(slide.poster) : undefined}
+                      alt={name}
+                      ar
+                      camera-controls
+                      auto-rotate
+                      style={mediaHeight}
+                      className="w-full bg-slate-900/5 pointer-events-none"
+                    />
+                  ) : (
+                    <img
+                      src={getProductAssetUrl(slide.url)}
+                      alt={name}
+                      className="h-[280px] w-full object-cover"
+                      loading={index === 0 ? 'eager' : 'lazy'}
+                    />
+                  )}
+                </Link>
+              ) : slide.kind === 'model' ? (
                 <model-viewer
                   src={getProductAssetUrl(slide.src)}
-                  poster={slide.poster}
+                  poster={slide.poster ? getProductAssetUrl(slide.poster) : undefined}
                   alt={name}
                   ar
                   camera-controls
@@ -137,7 +166,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
                 />
               ) : (
                 <img
-                  src={getProductAssetUrl(slide.url)} // <-- ИСПРАВЛЕНО НА slide.url!
+                  src={getProductAssetUrl(slide.url)}
                   alt={name}
                   className="h-[280px] w-full object-cover"
                   loading={index === 0 ? 'eager' : 'lazy'}
@@ -149,9 +178,17 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-5 pt-4">
-        <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900">
-          {name}
-        </h2>
+        {productHref ? (
+          <Link to={productHref} className="block text-inherit no-underline hover:text-blue-600">
+            <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900">
+              {name}
+            </h2>
+          </Link>
+        ) : (
+          <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900">
+            {name}
+          </h2>
+        )}
         <p className="text-xl font-bold tabular-nums text-blue-600">{formatPrice(product.price)}</p>
         <div className="mt-auto flex flex-col gap-2">
           {isAdmin && (
@@ -166,7 +203,10 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
           )}
           <button
             type="button"
-            onClick={() => addToCart(product)}
+            onClick={(event) => {
+              event.stopPropagation()
+              addToCart(product)
+            }}
             className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.98]"
           >
             В корзину

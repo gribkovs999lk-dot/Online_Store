@@ -13,7 +13,9 @@ function SellerDashboard({ session }) {
   const [success, setSuccess] = useState('')
   const [imageFiles, setImageFiles] = useState([])
   const [modelFile, setModelFile] = useState(null)
-  const [fileInputKey, setFileInputKey] = useState(0)
+  const [imageInputKey, setImageInputKey] = useState(0)
+  const [modelInputKey, setModelInputKey] = useState(0)
+  const [description, setDescription] = useState('')
   const [form, setForm] = useState({
     name: '',
     price: '',
@@ -64,7 +66,7 @@ function SellerDashboard({ session }) {
     setError('')
     setSuccess('')
 
-    if (!form.name || !form.price || !form.categoryId) {
+    if (!form.name || !form.price || !form.categoryId || !description.trim()) {
       setError('Пожалуйста, заполните все текстовые поля и выберите категорию.')
       return
     }
@@ -118,6 +120,7 @@ function SellerDashboard({ session }) {
         {
           name: form.name,
           price: parseFloat(form.price),
+          description: description.trim(),
           category_id: form.categoryId,
           seller_id: sellerId,
           image_url: uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null,
@@ -130,9 +133,11 @@ function SellerDashboard({ session }) {
 
       setSuccess('Товар успешно добавлен!')
       setForm({ name: '', price: '', categoryId: '' })
+      setDescription('')
       setImageFiles([])
       setModelFile(null)
-      setFileInputKey((prev) => prev + 1)
+      setImageInputKey((prev) => prev + 1)
+      setModelInputKey((prev) => prev + 1)
     } catch (err) {
       setIsUploadingFile(false)
       setUploadMessage('')
@@ -140,6 +145,21 @@ function SellerDashboard({ session }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const removeImageAt = (index) => {
+    setImageFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+      if (next.length === 0) {
+        setImageInputKey((k) => k + 1)
+      }
+      return next
+    })
+  }
+
+  const removeModel = () => {
+    setModelFile(null)
+    setModelInputKey((k) => k + 1)
   }
 
   return (
@@ -173,6 +193,21 @@ function SellerDashboard({ session }) {
         </div>
 
         <div>
+          <label htmlFor="product-description" className="mb-1 block text-sm font-medium text-slate-700">
+            Описание товара
+          </label>
+          <textarea
+            id="product-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            rows={5}
+            placeholder="Подробное описание: материалы, размеры, особенности…"
+            className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">Категория</label>
           <select
             value={form.categoryId}
@@ -191,9 +226,10 @@ function SellerDashboard({ session }) {
         </div>
 
         <div className="space-y-2 pt-2">
-          <label className="block text-sm font-medium text-slate-700">Изображения товара</label>
+          <label className="block text-sm font-medium text-slate-700">Загрузите изображение товара</label>
+          <p className="text-xs text-slate-500">Форматы JPG, PNG. Можно выбрать несколько файлов.</p>
           <input
-            key={`images-${fileInputKey}`}
+            key={`images-${imageInputKey}`}
             type="file"
             accept="image/*"
             multiple
@@ -201,14 +237,25 @@ function SellerDashboard({ session }) {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
           
-          {imagePreviewUrls.length > 0 && (
+          {imageFiles.length > 0 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-600">Предпросмотр</p>
+              <p className="mb-2 text-xs font-medium text-slate-600">Предпросмотр ({imageFiles.length})</p>
               <ul className="flex flex-wrap gap-2">
                 {imagePreviewUrls.map((src, index) => (
-                  <li key={`${src}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                    {/* Здесь используется чистый src, так как blob:// ссылки работают локально без VPN */}
+                  <li
+                    key={`${imageFiles[index]?.name ?? 'img'}-${imageFiles[index]?.lastModified ?? index}-${index}`}
+                    className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+                  >
                     <img src={src} alt="" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeImageAt(index)}
+                      className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-xs font-bold leading-none text-white shadow-sm transition hover:bg-red-600"
+                      aria-label="Удалить изображение"
+                      title="Удалить"
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -217,14 +264,30 @@ function SellerDashboard({ session }) {
         </div>
 
         <div className="space-y-2 pt-2">
-          <label className="block text-sm font-medium text-slate-700">3D-модель (.glb)</label>
+          <label className="block text-sm font-medium text-slate-700">Загрузите 3D модель</label>
+          <p className="text-xs text-slate-500">Файл в формате .glb</p>
           <input
-            key={`model-${fileInputKey}`}
+            key={`model-${modelInputKey}`}
             type="file"
             accept=".glb"
             onChange={(event) => setModelFile(event.target.files?.[0] ?? null)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
+
+          {modelFile && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="min-w-0 truncate text-sm text-slate-700" title={modelFile.name}>
+                {modelFile.name}
+              </span>
+              <button
+                type="button"
+                onClick={removeModel}
+                className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 transition hover:bg-red-100"
+              >
+                Удалить модель
+              </button>
+            </div>
+          )}
         </div>
 
         {isUploadingFile && <p className="text-sm text-blue-700 font-medium">{uploadMessage || 'Загрузка файла...'}</p>}
