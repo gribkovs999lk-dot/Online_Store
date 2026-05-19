@@ -2,42 +2,14 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Pagination } from 'swiper/modules'
+import { Box } from 'lucide-react'
 import { useCartStore } from './cartStore'
 import { supabase } from './supabaseClient'
 
 import 'swiper/css'
 import 'swiper/css/pagination'
 
-function getProductAssetUrl(filePath) {
-  if (!filePath) return '';
-  
-  // 1. Если это локальное превью (blob:), возвращаем как есть
-  if (filePath.startsWith('blob:')) return filePath;
-
-  let cleanPath = filePath;
-
-  // 2. ОЧИСТКА: Если в базе лежит полная ссылка (с http/https), 
-  // вырезаем из неё всё, что идет после названия бакета 'product-assets/'
-  if (cleanPath.includes('product-assets/')) {
-    cleanPath = cleanPath.split('product-assets/')[1];
-  }
-
-  // На всякий случай убираем случайные лишние слэши в начале пути
-  cleanPath = cleanPath.replace(/^\/+/, '');
-
-  // 3. Подменяем домен Supabase на прокси твоего сайта
-  if (typeof window !== 'undefined') {
-    const currentOrigin = window.location.origin; 
-    return `${currentOrigin}/supabase/storage/v1/object/public/product-assets/${cleanPath}`;
-  }
-
-  return `https://yzwfkcwqtakglfzkoccy.supabase.co/storage/v1/object/public/product-assets/${cleanPath}`;
-}   
-
-
-const PLACEHOLDER_IMG = 'https://via.placeholder.com/400x300?text=No+Media'
-
-const mediaHeight = { width: '100%', height: '280px' }
+import { getProductAssetUrl, PRODUCT_PLACEHOLDER_IMG as PLACEHOLDER_IMG } from './productAssets'
 
 function formatPrice(price) {
   const numericPrice = Number(price)
@@ -49,6 +21,11 @@ function formatPrice(price) {
   }).format(numericPrice)
 }
 
+function hasModelUrl(product) {
+  const url = product.model_url ?? product.modelUrl ?? product.model_3d_url ?? ''
+  return typeof url === 'string' && url.trim() !== ''
+}
+
 /** @param {{ product: Record<string, unknown>, isAdmin?: boolean, onProductDeleted?: (id: string | number) => void }} props */
 function ProductCard({ product, isAdmin = false, onProductDeleted }) {
   const addToCart = useCartStore((state) => state.addToCart)
@@ -56,12 +33,9 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
   const [deleting, setDeleting] = useState(false)
 
   const productId = product.id
-
   const cartCountForProduct = cartItems.filter((i) => i.id === productId).length
 
-  const slides = useMemo(() => {
-    const modelSrc =
-      product.model_url ?? product.modelUrl ?? product.model_3d_url ?? ''
+  const imageSlides = useMemo(() => {
     const urls = Array.isArray(product.image_urls)
       ? product.image_urls.filter((u) => typeof u === 'string' && u.trim() !== '')
       : []
@@ -70,41 +44,40 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
       (typeof product.imageUrl === 'string' && product.imageUrl) ||
       null
 
-    const items = []
-
-    if (modelSrc) {
-      const poster = urls[0] ?? legacy ?? undefined
-      items.push({ kind: 'model', key: `m-${productId}-3d`, src: modelSrc, poster })
-      urls.forEach((url, i) => {
-        items.push({ kind: 'img', key: `m-${productId}-img-${i}`, url })
-      })
-      return items
+    if (urls.length > 0) {
+      return urls.map((url, index) => ({
+        key: `img-${productId}-${index}`,
+        src: getProductAssetUrl(url),
+      }))
     }
 
-    const mainImg = urls[0] ?? legacy
-    if (mainImg) {
-      items.push({ kind: 'img', key: `m-${productId}-hero`, url: mainImg })
-      for (let i = 1; i < urls.length; i++) {
-        items.push({ kind: 'img', key: `m-${productId}-rest-${i}`, url: urls[i] })
-      }
-      return items
+    if (legacy) {
+      return [{ key: `legacy-${productId}`, src: getProductAssetUrl(legacy) }]
     }
 
-    items.push({ kind: 'img', key: `m-${productId}-ph`, url: PLACEHOLDER_IMG })
-    return items
+    return [{ key: `placeholder-${productId}`, src: PLACEHOLDER_IMG }]
   }, [product, productId])
 
-  const name = typeof product.name === 'string' ? product.name : product.name == null ? 'Без названия' : String(product.name)
+  const show3dBadge = hasModelUrl(product)
+
+  const name =
+    typeof product.name === 'string'
+      ? product.name
+      : product.name == null
+        ? 'Без названия'
+        : String(product.name)
   const productHref = productId != null ? `/product/${productId}` : null
+  const paginationClass =
+    productId != null ? `product-card-pagination-${productId}` : 'product-card-pagination'
 
   const handleAdminDelete = async (event) => {
+    event.preventDefault()
     event.stopPropagation()
     if (!isAdmin || productId == null) return
     if (!window.confirm('Удалить этот товар из каталога? Это действие нельзя отменить.')) return
 
     setDeleting(true)
     const { error: deleteError } = await supabase.from('products').delete().eq('id', productId)
-
     setDeleting(false)
 
     if (deleteError) {
@@ -115,108 +88,94 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
     onProductDeleted?.(productId)
   }
 
+  const linkClassName =
+    'block text-inherit no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500'
+
+  const swiperBlock = (
+    <Swiper
+      modules={[Pagination]}
+      spaceBetween={0}
+      slidesPerView={1}
+      pagination={{
+        clickable: true,
+        dynamicBullets: imageSlides.length > 3,
+        el: `.${paginationClass}`,
+      }}
+      className="product-card-swiper"
+    >
+      {imageSlides.map((slide, index) => (
+        <SwiperSlide key={slide.key} className="!flex items-center justify-center bg-slate-100">
+          <img
+            src={slide.src}
+            alt={name}
+            className="h-[280px] w-full object-cover"
+            loading={index === 0 ? 'eager' : 'lazy'}
+            draggable={false}
+          />
+        </SwiperSlide>
+      ))}
+    </Swiper>
+  )
+
+  const titleBlock = (
+    <div className="flex flex-1 flex-col gap-2 p-5 pt-4">
+      <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900 transition group-hover:text-blue-600">
+        {name}
+      </h2>
+      <p className="text-xl font-bold tabular-nums text-blue-600">{formatPrice(product.price)}</p>
+    </div>
+  )
+
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/5 transition hover:border-blue-200/80 hover:shadow-lg hover:shadow-blue-500/10">
-      <div className="relative bg-gradient-to-b from-slate-100 to-slate-50 [&_.swiper-pagination-bullet-active]:bg-blue-600">
-        <Swiper
-          modules={[Pagination]}
-          spaceBetween={0}
-          slidesPerView={1}
-          pagination={{ clickable: true, dynamicBullets: slides.length > 3 }}
-          className="product-card-swiper !pb-10"
-        >
-          {slides.map((slide, index) => (
-            <SwiperSlide key={slide.key} className="!flex items-center justify-center bg-slate-100">
-              {productHref ? (
-                <Link
-                  to={productHref}
-                  className="flex h-full w-full items-center justify-center"
-                  aria-label={`Открыть «${name}»`}
-                >
-                  {slide.kind === 'model' ? (
-                    <model-viewer
-                      src={getProductAssetUrl(slide.src)}
-                      poster={slide.poster ? getProductAssetUrl(slide.poster) : undefined}
-                      alt={name}
-                      ar
-                      camera-controls
-                      auto-rotate
-                      style={mediaHeight}
-                      className="w-full bg-slate-900/5 pointer-events-none"
-                    />
-                  ) : (
-                    <img
-                      src={getProductAssetUrl(slide.url)}
-                      alt={name}
-                      className="h-[280px] w-full object-cover"
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                    />
-                  )}
-                </Link>
-              ) : slide.kind === 'model' ? (
-                <model-viewer
-                  src={getProductAssetUrl(slide.src)}
-                  poster={slide.poster ? getProductAssetUrl(slide.poster) : undefined}
-                  alt={name}
-                  ar
-                  camera-controls
-                  auto-rotate
-                  style={mediaHeight}
-                  className="w-full bg-slate-900/5"
-                />
-              ) : (
-                <img
-                  src={getProductAssetUrl(slide.url)}
-                  alt={name}
-                  className="h-[280px] w-full object-cover"
-                  loading={index === 0 ? 'eager' : 'lazy'}
-                />
-              )}
-            </SwiperSlide>
-          ))}
-        </Swiper>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-3 p-5 pt-4">
+      <div className="relative overflow-hidden bg-gradient-to-b from-slate-100 to-slate-50 [&_.swiper-pagination-bullet-active]:bg-blue-600">
         {productHref ? (
-          <Link to={productHref} className="block text-inherit no-underline hover:text-blue-600">
-            <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900">
-              {name}
-            </h2>
+          <Link to={productHref} className={linkClassName} aria-label={`Открыть «${name}»`}>
+            {swiperBlock}
           </Link>
         ) : (
-          <h2 className="line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-snug tracking-tight text-slate-900">
-            {name}
-          </h2>
+          swiperBlock
         )}
-        <p className="text-xl font-bold tabular-nums text-blue-600">{formatPrice(product.price)}</p>
-        <div className="mt-auto flex flex-col gap-2">
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={handleAdminDelete}
-              disabled={deleting}
-              className="w-full rounded-xl border border-red-200 bg-red-50 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-            >
-              {deleting ? 'Удаление…' : 'Удалить товар'}
-            </button>
-          )}
+        <div className={`${paginationClass} swiper-pagination !relative !bottom-0 !mt-0 !pb-3`} />
+        {show3dBadge && (
+          <span className="pointer-events-none absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-full bg-slate-900/85 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm ring-1 ring-white/20 backdrop-blur-sm">
+            <Box className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            3D доступно
+          </span>
+        )}
+      </div>
+
+      {productHref ? (
+        <Link to={productHref} className={`${linkClassName} flex flex-1 flex-col`}>
+          {titleBlock}
+        </Link>
+      ) : (
+        titleBlock
+      )}
+
+      <div className="flex flex-col gap-2 px-5 pb-5">
+        {isAdmin && (
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              addToCart(product)
-            }}
-            className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.98]"
+            onClick={handleAdminDelete}
+            disabled={deleting}
+            className="w-full rounded-xl border border-red-200 bg-red-50 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
           >
-            В корзину
-            {cartCountForProduct > 0 ? (
-              <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white/20 px-2 text-xs font-bold">
-                {cartCountForProduct}
-              </span>
-            ) : null}
+            {deleting ? 'Удаление…' : 'Удалить товар'}
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={() => addToCart(product)}
+          className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.98]"
+        >
+          В корзину
+          {cartCountForProduct > 0 ? (
+            <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white/20 px-2 text-xs font-bold">
+              {cartCountForProduct}
+            </span>
+          ) : null}
+        </button>
       </div>
     </article>
   )
