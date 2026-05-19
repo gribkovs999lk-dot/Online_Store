@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Pagination } from 'swiper/modules'
 import { Box } from 'lucide-react'
-import { useCartStore } from './cartStore'
 import { supabase } from './supabaseClient'
+import CartQuantityControl from './CartQuantityControl'
+import { PRODUCT_IMAGE_FRAME, PRODUCT_IMAGE_IMG } from './productImageClasses'
 
 import 'swiper/css'
 import 'swiper/css/pagination'
@@ -28,12 +29,9 @@ function hasModelUrl(product) {
 
 /** @param {{ product: Record<string, unknown>, isAdmin?: boolean, onProductDeleted?: (id: string | number) => void }} props */
 function ProductCard({ product, isAdmin = false, onProductDeleted }) {
-  const addToCart = useCartStore((state) => state.addToCart)
-  const cartItems = useCartStore((state) => state.items)
   const [deleting, setDeleting] = useState(false)
 
   const productId = product.id
-  const cartCountForProduct = cartItems.filter((i) => i.id === productId).length
 
   const imageSlides = useMemo(() => {
     const urls = Array.isArray(product.image_urls)
@@ -101,17 +99,19 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
         dynamicBullets: imageSlides.length > 3,
         el: `.${paginationClass}`,
       }}
-      className="product-card-swiper"
+      className="product-card-swiper !h-auto"
     >
       {imageSlides.map((slide, index) => (
-        <SwiperSlide key={slide.key} className="!flex items-center justify-center bg-slate-100">
-          <img
-            src={slide.src}
-            alt={name}
-            className="h-[280px] w-full object-cover"
-            loading={index === 0 ? 'eager' : 'lazy'}
-            draggable={false}
-          />
+        <SwiperSlide key={slide.key} className="!h-auto">
+          <div className={PRODUCT_IMAGE_FRAME}>
+            <img
+              src={slide.src}
+              alt={name}
+              className={PRODUCT_IMAGE_IMG}
+              loading={index === 0 ? 'eager' : 'lazy'}
+              draggable={false}
+            />
+          </div>
         </SwiperSlide>
       ))}
     </Swiper>
@@ -164,18 +164,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
             {deleting ? 'Удаление…' : 'Удалить товар'}
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => addToCart(product)}
-          className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.98]"
-        >
-          В корзину
-          {cartCountForProduct > 0 ? (
-            <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white/20 px-2 text-xs font-bold">
-              {cartCountForProduct}
-            </span>
-          ) : null}
-        </button>
+        <CartQuantityControl product={product} addLabel="В корзину" />
       </div>
     </article>
   )

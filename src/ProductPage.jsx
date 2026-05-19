@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ShoppingCart } from 'lucide-react'
+import { Maximize2 } from 'lucide-react'
 import { supabase } from './supabaseClient'
-import { useCartStore } from './cartStore'
 import { getProductAssetUrl, PRODUCT_PLACEHOLDER_IMG } from './productAssets'
+import CartQuantityControl from './CartQuantityControl'
+import {
+  PRODUCT_IMAGE_FRAME,
+  PRODUCT_IMAGE_IMG,
+  PRODUCT_THUMB_FRAME,
+  PRODUCT_THUMB_IMG,
+} from './productImageClasses'
 
 function formatPrice(price) {
   const numericPrice = Number(price)
@@ -39,10 +45,24 @@ function ProductPage() {
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
-  const [addedNotice, setAddedNotice] = useState(false)
+  const [fullscreenMedia, setFullscreenMedia] = useState(null)
 
-  const addToCart = useCartStore((state) => state.addToCart)
-  const cartItems = useCartStore((state) => state.items)
+  useEffect(() => {
+    if (!fullscreenMedia) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setFullscreenMedia(null)
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [fullscreenMedia])
 
   useEffect(() => {
     if (!id) {
@@ -76,7 +96,6 @@ function ProductPage() {
   const imageUrls = useMemo(() => imagePaths.map(getProductAssetUrl), [imagePaths])
   const modelPath = useMemo(() => (product ? getModelUrl(product) : null), [product])
   const modelSrc = modelPath ? getProductAssetUrl(modelPath) : null
-  const posterSrc = imageUrls[0] ?? undefined
 
   useEffect(() => {
     setSelectedImageIndex(0)
@@ -84,17 +103,6 @@ function ProductPage() {
 
   const activeImage =
     imageUrls.length > 0 ? imageUrls[selectedImageIndex] ?? imageUrls[0] : PRODUCT_PLACEHOLDER_IMG
-
-  const cartCountForProduct = product
-    ? cartItems.filter((item) => String(item.id) === String(product.id)).length
-    : 0
-
-  const handleAddToCart = () => {
-    if (!product) return
-    addToCart(product)
-    setAddedNotice(true)
-    window.setTimeout(() => setAddedNotice(false), 2000)
-  }
 
   if (loading) {
     return (
@@ -130,10 +138,18 @@ function ProductPage() {
       <div className="grid gap-8 lg:grid-cols-[1fr_380px] lg:gap-10">
         <div className="space-y-4">
           {modelSrc && (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/5">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/5">
+              <button
+                type="button"
+                onClick={() => setFullscreenMedia({ type: 'model', url: modelSrc })}
+                className="absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-md ring-1 ring-slate-200/80 backdrop-blur-sm transition hover:bg-white hover:text-blue-700"
+                aria-label="Открыть 3D-модель на весь экран"
+              >
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                Во весь экран
+              </button>
               <model-viewer
                 src={modelSrc}
-                poster={posterSrc}
                 alt={product.name ?? '3D-модель товара'}
                 camera-controls
                 auto-rotate
@@ -146,20 +162,45 @@ function ProductPage() {
                   background: '#f8fafc',
                   borderRadius: '16px',
                 }}
-                className="block w-full"
-              />
+                className="relative block w-full"
+              >
+                <div
+                  slot="poster"
+                  id="lazy-load-poster"
+                  className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-slate-50/80 px-6 text-center backdrop-blur-sm"
+                >
+                  <div
+                    className="h-11 w-11 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600"
+                    aria-hidden
+                  />
+                  <p className="max-w-xs text-sm font-medium leading-snug text-slate-700">
+                    Инициализация интерактивной 3D-модели...
+                  </p>
+                </div>
+              </model-viewer>
             </div>
           )}
 
           {(hasGallery || showPlaceholderImage) && (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-900/5 md:p-4">
-              <div className="overflow-hidden rounded-xl bg-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasGallery) setFullscreenMedia({ type: 'image', url: activeImage })
+                }}
+                disabled={!hasGallery}
+                className={`${PRODUCT_IMAGE_FRAME} block w-full rounded-xl md:h-80 ${
+                  hasGallery ? 'cursor-zoom-in' : 'cursor-default'
+                }`}
+                aria-label={hasGallery ? 'Открыть изображение на весь экран' : undefined}
+              >
                 <img
                   src={hasGallery ? activeImage : PRODUCT_PLACEHOLDER_IMG}
                   alt={product.name ?? 'Изображение товара'}
-                  className="aspect-[4/3] w-full object-cover md:aspect-[16/10]"
+                  className={PRODUCT_IMAGE_IMG}
+                  draggable={false}
                 />
-              </div>
+              </button>
 
               {imageUrls.length > 1 && (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -169,20 +210,21 @@ function ProductPage() {
                       <li key={`${url}-${index}`}>
                         <button
                           type="button"
-                          onClick={() => setSelectedImageIndex(index)}
-                          className={`overflow-hidden rounded-lg border-2 transition ${
+                          onClick={() => {
+                            setSelectedImageIndex(index)
+                            setFullscreenMedia({ type: 'image', url })
+                          }}
+                          className={`cursor-zoom-in overflow-hidden rounded-lg border-2 transition ${
                             isActive
                               ? 'border-blue-600 ring-2 ring-blue-600/20'
                               : 'border-slate-200 hover:border-slate-300'
                           }`}
-                          aria-label={`Фото ${index + 1}`}
+                          aria-label={`Фото ${index + 1}, открыть на весь экран`}
                           aria-pressed={isActive}
                         >
-                          <img
-                            src={url}
-                            alt=""
-                            className="h-16 w-16 object-cover sm:h-20 sm:w-20"
-                          />
+                          <div className={PRODUCT_THUMB_FRAME}>
+                            <img src={url} alt="" className={PRODUCT_THUMB_IMG} draggable={false} />
+                          </div>
                         </button>
                       </li>
                     )
@@ -213,25 +255,13 @@ function ProductPage() {
               </p>
             </section>
 
-            <button
-              type="button"
-              onClick={handleAddToCart}
-              className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 active:scale-[0.98]"
-            >
-              <ShoppingCart className="h-5 w-5" aria-hidden />
-              Добавить в корзину
-              {cartCountForProduct > 0 && (
-                <span className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-sm">
-                  {cartCountForProduct}
-                </span>
-              )}
-            </button>
-
-            {addedNotice && (
-              <p className="mt-3 text-center text-sm font-medium text-emerald-600" role="status">
-                Товар добавлен в корзину
-              </p>
-            )}
+            <div className="mt-8">
+              <CartQuantityControl
+                product={product}
+                addLabel="Добавить в корзину"
+                className="py-3.5 text-base shadow-lg shadow-blue-600/25"
+              />
+            </div>
 
             <Link
               to="/cart"
@@ -242,6 +272,51 @@ function ProductPage() {
           </div>
         </aside>
       </div>
+
+      {fullscreenMedia && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md transition-opacity duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-label={fullscreenMedia.type === 'model' ? '3D-модель на весь экран' : 'Изображение на весь экран'}
+          onClick={() => setFullscreenMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setFullscreenMedia(null)}
+            className="absolute right-4 top-4 z-[110] flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl font-light text-white ring-1 ring-white/20 transition hover:bg-white/20"
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+
+          <div
+            className="flex max-h-full max-w-full scale-100 items-center justify-center transition-transform duration-200"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {fullscreenMedia.type === 'image' && (
+              <img
+                src={fullscreenMedia.url}
+                alt={product.name ?? 'Изображение товара'}
+                className="max-h-[90vh] max-w-full object-contain"
+              />
+            )}
+
+            {fullscreenMedia.type === 'model' && (
+              <model-viewer
+                src={fullscreenMedia.url}
+                alt={product.name ?? '3D-модель товара'}
+                camera-controls
+                auto-rotate
+                ar
+                ar-modes="webxr scene-viewer quick-look"
+                shadow-intensity="1"
+                className="h-screen w-screen max-h-[100dvh] max-w-[100vw] bg-slate-900"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
