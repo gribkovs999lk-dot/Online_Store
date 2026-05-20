@@ -183,24 +183,27 @@ function ProductPage() {
 
           {(hasGallery || showPlaceholderImage) && (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-900/5 md:p-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasGallery) setFullscreenMedia({ type: 'image', url: activeImage })
-                }}
-                disabled={!hasGallery}
-                className={`${PRODUCT_IMAGE_FRAME} block w-full rounded-xl md:h-80 ${
-                  hasGallery ? 'cursor-zoom-in' : 'cursor-default'
-                }`}
-                aria-label={hasGallery ? 'Открыть изображение на весь экран' : undefined}
-              >
-                <img
-                  src={hasGallery ? activeImage : PRODUCT_PLACEHOLDER_IMG}
-                  alt={product.name ?? 'Изображение товара'}
-                  className={PRODUCT_IMAGE_IMG}
-                  draggable={false}
-                />
-              </button>
+              <div className="relative w-full overflow-hidden rounded-xl bg-gray-50">
+                {hasGallery && (
+                  <button
+                    type="button"
+                    onClick={() => setFullscreenMedia({ type: 'image', url: activeImage })}
+                    className="absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-md ring-1 ring-slate-200/80 backdrop-blur-sm transition hover:bg-white hover:text-blue-700"
+                    aria-label="Открыть изображение на весь экран"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                    Во весь экран <span aria-hidden>⛶</span>
+                  </button>
+                )}
+                <div className={`${PRODUCT_IMAGE_FRAME} !aspect-auto h-[450px] !bg-gray-50`}>
+                  <img
+                    src={hasGallery ? activeImage : PRODUCT_PLACEHOLDER_IMG}
+                    alt={product.name ?? 'Изображение товара'}
+                    className={PRODUCT_IMAGE_IMG}
+                    draggable={false}
+                  />
+                </div>
+              </div>
 
               {imageUrls.length > 1 && (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -210,16 +213,13 @@ function ProductPage() {
                       <li key={`${url}-${index}`}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedImageIndex(index)
-                            setFullscreenMedia({ type: 'image', url })
-                          }}
-                          className={`cursor-zoom-in overflow-hidden rounded-lg border-2 transition ${
+                          onClick={() => setSelectedImageIndex(index)}
+                          className={`overflow-hidden rounded-lg border-2 transition ${
                             isActive
                               ? 'border-blue-600 ring-2 ring-blue-600/20'
                               : 'border-slate-200 hover:border-slate-300'
                           }`}
-                          aria-label={`Фото ${index + 1}, открыть на весь экран`}
+                          aria-label={`Фото ${index + 1}`}
                           aria-pressed={isActive}
                         >
                           <div className={PRODUCT_THUMB_FRAME}>
@@ -298,7 +298,7 @@ function ProductPage() {
               <img
                 src={fullscreenMedia.url}
                 alt={product.name ?? 'Изображение товара'}
-                className="max-h-[90vh] max-w-full object-contain"
+                className="h-[90vh] w-full max-w-[100vw] object-contain"
               />
             )}
 
