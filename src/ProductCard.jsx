@@ -27,8 +27,8 @@ function hasModelUrl(product) {
   return typeof url === 'string' && url.trim() !== ''
 }
 
-/** @param {{ product: Record<string, unknown>, isAdmin?: boolean, onProductDeleted?: (id: string | number) => void }} props */
-function ProductCard({ product, isAdmin = false, onProductDeleted }) {
+/** @param {{ product: Record<string, unknown>, session?: import('@supabase/supabase-js').Session | null, isAdmin?: boolean, onProductDeleted?: (id: string | number) => void }} props */
+function ProductCard({ product, session = null, isAdmin = false, onProductDeleted }) {
   const [deleting, setDeleting] = useState(false)
 
   const productId = product.id
@@ -164,7 +164,7 @@ function ProductCard({ product, isAdmin = false, onProductDeleted }) {
             {deleting ? 'Удаление…' : 'Удалить товар'}
           </button>
         )}
-        <CartQuantityControl product={product} addLabel="В корзину" />
+        <CartQuantityControl product={product} session={session} addLabel="В корзину" />
       </div>
     </article>
   )

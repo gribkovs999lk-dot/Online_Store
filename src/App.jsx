@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
-import { useCartStore } from './cartStore'
+import { useCartStore, getCartTotalCount } from './cartStore'
 import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import Checkout from './Checkout'
 import Auth from './Auth'
@@ -20,6 +20,8 @@ function App() {
   const [productsLoading, setProductsLoading] = useState(true)
   const [error, setError] = useState(null)
   const cartItems = useCartStore((state) => state.items)
+  const clearCart = useCartStore((state) => state.clearCart)
+  const cartCount = getCartTotalCount(cartItems)
 
   const fetchRole = async (userId) => {
     const { data } = await supabase.from('profiles').select('role, is_blocked').eq('id', userId).single()
@@ -27,6 +29,7 @@ function App() {
     if (data?.is_blocked === true) {
       setAccountBlockedNotice(true)
       setUserRole(null)
+      clearCart()
       await supabase.auth.signOut()
       setLoading(false)
       return
@@ -53,6 +56,7 @@ function App() {
       if (currentSession) {
         fetchRole(currentSession.user.id)
       } else {
+        clearCart()
         setUserRole(null)
         setLoading(false)
       }
@@ -186,13 +190,16 @@ function App() {
                     />
                   </svg>
                   <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-                    {cartItems.length}
+                    {cartCount}
                   </span>
                 </Link>
 
                 <button
                   type="button"
-                  onClick={() => supabase.auth.signOut()}
+                  onClick={async () => {
+                    clearCart()
+                    await supabase.auth.signOut()
+                  }}
                   className="text-sm font-semibold text-gray-700 transition hover:text-red-600"
                 >
                   Выйти
@@ -241,6 +248,7 @@ function App() {
                     <ProductCard
                       key={product.id ?? product.name}
                       product={product}
+                      session={session}
                       isAdmin={userRole === 'admin'}
                       onProductDeleted={(id) =>
                         setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)))
@@ -252,7 +260,7 @@ function App() {
             </div>
           }
         />
-        <Route path="/cart" element={session ? <Checkout session={session} /> : <Navigate to="/auth" replace />} />
+        <Route path="/cart" element={session ? <Checkout /> : <Navigate to="/auth" replace />} />
         <Route
           path="/orders"
           element={
