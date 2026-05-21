@@ -33,9 +33,75 @@ function Checkout() {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
+  const [addressSuggestions, setAddressSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
+  const dadataToken = import.meta.env.VITE_DADATA_TOKEN
+
+  const fetchAddressSuggestions = async (query) => {
+    if (query.length < 3) {
+      setAddressSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    if (!dadataToken) {
+      console.error('VITE_DADATA_TOKEN не задан в .env')
+      return
+    }
+
+    try {
+      const response = await fetch(
+        'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address',
+        {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Token ${dadataToken}`,
+          },
+          body: JSON.stringify({ query, count: 5 }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Dadata API: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setAddressSuggestions(data.suggestions || [])
+      setShowSuggestions(true)
+    } catch (fetchError) {
+      console.error('Ошибка загрузки подсказок Dadata:', fetchError)
+    }
+  }
+
+  const handleAddressChange = (event) => {
+    const value = event.target.value
+    setAddress(value)
+
+    if (!value.trim()) {
+      setAddressSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    fetchAddressSuggestions(value)
+  }
+
+  const handleAddressBlur = () => {
+    window.setTimeout(() => setShowSuggestions(false), 150)
+  }
+
+  const handleSelectSuggestion = (value) => {
+    setAddress(value)
+    setAddressSuggestions([])
+    setShowSuggestions(false)
+  }
 
   const totalAmount = useMemo(() => {
     return items.reduce(
@@ -117,6 +183,8 @@ function Checkout() {
         setEmail('')
         setPhone('')
         setAddress('')
+        setAddressSuggestions([])
+        setShowSuggestions(false)
         setMessage('Заказ успешно оформлен!')
         navigate('/orders')
       }
@@ -257,13 +325,33 @@ function Checkout() {
             className="w-full rounded-lg border border-slate-300 px-4 py-2.5 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
 
-          <input
-            type="text"
-            placeholder="Адрес"
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-4 py-2.5 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Адрес"
+              value={address}
+              onChange={handleAddressChange}
+              onBlur={handleAddressBlur}
+              autoComplete="off"
+              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+
+            {showSuggestions && addressSuggestions.length > 0 && (
+              <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl">
+                {addressSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.value}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSelectSuggestion(suggestion.value)}
+                    className="w-full cursor-pointer border-b border-gray-50 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors last:border-none hover:bg-indigo-50"
+                  >
+                    {suggestion.value}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <button
             type="submit"

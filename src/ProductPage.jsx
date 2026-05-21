@@ -166,10 +166,11 @@ function ProductPage() {
               <model-viewer
                 src={modelSrc}
                 alt={product.name ?? '3D-модель товара'}
-                camera-controls
-                auto-rotate
                 ar
+                camera-controls
+                touch-action="pan-y"
                 ar-modes="webxr scene-viewer quick-look"
+                auto-rotate
                 shadow-intensity="1"
                 style={{
                   width: '100%',
@@ -322,10 +323,11 @@ function ProductPage() {
               <model-viewer
                 src={fullscreenMedia.url}
                 alt={product.name ?? '3D-модель товара'}
-                camera-controls
-                auto-rotate
                 ar
+                camera-controls
+                touch-action="pan-y"
                 ar-modes="webxr scene-viewer quick-look"
+                auto-rotate
                 shadow-intensity="1"
                 className="h-screen w-screen max-h-[100dvh] max-w-[100vw] bg-slate-900"
               />
