@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
-const MAX_MODEL_BYTES = 40 * 1024 * 1024
+const MAX_MODEL_BYTES = 50 * 1024 * 1024
 
 function SellerDashboard({ session }) {
   const sellerId = session?.user?.id
@@ -103,7 +103,7 @@ function SellerDashboard({ session }) {
     }
 
     if (selectedFile.size >= MAX_MODEL_BYTES) {
-      setError('Размер 3D-модели не должен превышать 40 МБ')
+      setError('Размер 3D-модели не должен превышать 50 МБ')
       setModelFile(null)
       revokeModelPreview()
       setModelInputKey((k) => k + 1)
@@ -380,7 +380,7 @@ function SellerDashboard({ session }) {
 
         <div className="space-y-2 pt-2">
           <label className="block text-sm font-medium text-slate-700">Загрузите 3D модель</label>
-          <p className="text-xs text-slate-500">Файл в формате .glb, не более 40 МБ</p>
+          <p className="text-xs text-slate-500">Файл в формате .glb, не более 50 МБ</p>
           <input
             key={`model-${modelInputKey}`}
             type="file"
