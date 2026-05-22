@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
+
+const MAX_MODEL_BYTES = 40 * 1024 * 1024
 
 function SellerDashboard({ session }) {
   const sellerId = session?.user?.id
@@ -13,6 +15,10 @@ function SellerDashboard({ session }) {
   const [success, setSuccess] = useState('')
   const [imageFiles, setImageFiles] = useState([])
   const [modelFile, setModelFile] = useState(null)
+  const [imagePreviewUrls, setImagePreviewUrls] = useState([])
+  const [modelPreviewUrl, setModelPreviewUrl] = useState(null)
+  const [downloadProgress, setDownloadProgress] = useState('')
+  const [isModelLoading, setIsModelLoading] = useState(false)
   const [imageInputKey, setImageInputKey] = useState(0)
   const [modelInputKey, setModelInputKey] = useState(0)
   const [description, setDescription] = useState('')
@@ -22,18 +28,12 @@ function SellerDashboard({ session }) {
     categoryId: '',
   })
 
-  // Генерируем временные URL для локального предпросмотра выбранных файлов
-  const imagePreviewUrls = useMemo(
-    () => imageFiles.map((file) => URL.createObjectURL(file)),
-    [imageFiles]
-  )
-
-  // Правильная очистка Blob-ссылок из памяти браузера при размонтировании или смене файлов
   useEffect(() => {
     return () => {
       imagePreviewUrls.forEach((url) => URL.revokeObjectURL(url))
+      if (modelPreviewUrl) URL.revokeObjectURL(modelPreviewUrl)
     }
-  }, [imagePreviewUrls])
+  }, [imagePreviewUrls, modelPreviewUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +61,82 @@ function SellerDashboard({ session }) {
     }
   }, [])
 
+  const revokeModelPreview = () => {
+    if (modelPreviewUrl) URL.revokeObjectURL(modelPreviewUrl)
+    setModelPreviewUrl(null)
+  }
+
+  const removeStoragePaths = async (paths) => {
+    if (!paths?.length) return
+    const { error: removeError } = await supabase.storage.from('product-assets').remove(paths)
+    if (removeError) console.error('Не удалось удалить файлы из Storage:', removeError)
+  }
+
+  const handleImageChange = (event) => {
+    const files = Array.from(event.target.files ?? [])
+    setImagePreviewUrls((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url))
+      return files.map((file) => URL.createObjectURL(file))
+    })
+    setImageFiles(files)
+  }
+
+  const handleModelChange = (event) => {
+    const selectedFile = event.target.files?.[0] ?? null
+    setError('')
+
+    if (!selectedFile) {
+      setModelFile(null)
+      revokeModelPreview()
+      setDownloadProgress('')
+      setIsModelLoading(false)
+      return
+    }
+
+    const extension = selectedFile.name.split('.').pop()?.toLowerCase()
+    if (extension !== 'glb') {
+      setError('3D-модель должна быть в формате .glb')
+      setModelFile(null)
+      revokeModelPreview()
+      setModelInputKey((k) => k + 1)
+      return
+    }
+
+    if (selectedFile.size >= MAX_MODEL_BYTES) {
+      setError('Размер 3D-модели не должен превышать 40 МБ')
+      setModelFile(null)
+      revokeModelPreview()
+      setModelInputKey((k) => k + 1)
+      return
+    }
+
+    revokeModelPreview()
+    setModelFile(selectedFile)
+    setModelPreviewUrl(URL.createObjectURL(selectedFile))
+    setDownloadProgress('Подготовка предпросмотра модели...')
+    setIsModelLoading(true)
+  }
+
+  const onModelProgress = (event) => {
+    const { loaded, total } = event.detail ?? {}
+    if (total > 0) {
+      const loadedMb = (loaded / (1024 * 1024)).toFixed(2)
+      const totalMb = (total / (1024 * 1024)).toFixed(2)
+      setDownloadProgress(`Загрузка модели... ${loadedMb} МБ / ${totalMb} МБ`)
+    }
+  }
+
+  const onModelLoad = () => {
+    setIsModelLoading(false)
+    setDownloadProgress('')
+  }
+
+  const onModelError = () => {
+    setIsModelLoading(false)
+    setDownloadProgress('')
+    setError('Не удалось отобразить предпросмотр 3D-модели. Проверьте файл .glb')
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
     setError('')
@@ -71,16 +147,19 @@ function SellerDashboard({ session }) {
       return
     }
 
-    setSaving(true)
-    try {
-      let uploadedImageUrls = []
-      let uploadedModelUrl = null
+    if (!sellerId) {
+      setError('Не удалось определить продавца. Войдите в аккаунт снова.')
+      return
+    }
 
+    setSaving(true)
+    let uploadedImageUrls = []
+
+    try {
       if (imageFiles.length > 0 || modelFile) {
         setIsUploadingFile(true)
       }
 
-      // Загрузка изображений в Storage
       if (imageFiles.length > 0) {
         setUploadMessage('Загрузка изображений...')
         for (const file of imageFiles) {
@@ -92,30 +171,35 @@ function SellerDashboard({ session }) {
             .from('product-assets')
             .upload(filePath, file)
 
-          if (uploadError) throw uploadError
+          if (uploadError) {
+            await removeStoragePaths(uploadedImageUrls)
+            throw uploadError
+          }
           uploadedImageUrls.push(filePath)
         }
       }
 
-      // Загрузка 3D-модели в Storage
+      let uploadedModelUrl = null
       if (modelFile) {
         setUploadMessage('Загрузка 3D-модели...')
         const fileExt = modelFile.name.split('.').pop()
         const fileName = `${Math.random()}.${fileExt}`
         const filePath = `${sellerId}/${fileName}`
 
-        const { error: uploadError } = await supabase.storage
+        const { error: modelUploadError } = await supabase.storage
           .from('product-assets')
           .upload(filePath, modelFile)
 
-        if (uploadError) throw uploadError
+        if (modelUploadError) {
+          await removeStoragePaths(uploadedImageUrls)
+          throw new Error(
+            modelUploadError.message || 'Ошибка загрузки 3D-модели. Товар не был создан.'
+          )
+        }
         uploadedModelUrl = filePath
       }
 
-      setIsUploadingFile(false)
-      setUploadMessage('')
-
-      // Сохранение записи о товаре в базу данных
+      setUploadMessage('Сохранение товара...')
       const { error: insertError } = await supabase.from('products').insert([
         {
           name: form.name,
@@ -129,25 +213,43 @@ function SellerDashboard({ session }) {
         },
       ])
 
-      if (insertError) throw insertError
+      if (insertError) {
+        await removeStoragePaths([
+          ...uploadedImageUrls,
+          ...(uploadedModelUrl ? [uploadedModelUrl] : []),
+        ])
+        throw insertError
+      }
 
       setSuccess('Товар успешно добавлен!')
       setForm({ name: '', price: '', categoryId: '' })
       setDescription('')
       setImageFiles([])
       setModelFile(null)
+      setImagePreviewUrls((prev) => {
+        prev.forEach((url) => URL.revokeObjectURL(url))
+        return []
+      })
+      revokeModelPreview()
+      setDownloadProgress('')
+      setIsModelLoading(false)
       setImageInputKey((prev) => prev + 1)
       setModelInputKey((prev) => prev + 1)
     } catch (err) {
-      setIsUploadingFile(false)
-      setUploadMessage('')
       setError(err.message || 'Произошла ошибка при сохранении товара')
     } finally {
+      setIsUploadingFile(false)
+      setUploadMessage('')
       setSaving(false)
     }
   }
 
   const removeImageAt = (index) => {
+    setImagePreviewUrls((prev) => {
+      const url = prev[index]
+      if (url) URL.revokeObjectURL(url)
+      return prev.filter((_, i) => i !== index)
+    })
     setImageFiles((prev) => {
       const next = prev.filter((_, i) => i !== index)
       if (next.length === 0) {
@@ -159,6 +261,9 @@ function SellerDashboard({ session }) {
 
   const removeModel = () => {
     setModelFile(null)
+    revokeModelPreview()
+    setDownloadProgress('')
+    setIsModelLoading(false)
     setModelInputKey((k) => k + 1)
   }
 
@@ -166,8 +271,16 @@ function SellerDashboard({ session }) {
     <div className="mx-auto max-w-2xl p-4">
       <h1 className="mb-6 text-2xl font-bold text-slate-800">Добавить новый товар</h1>
 
-      {error && <div className="mb-4 rounded-lg bg-red-50 p-4 text-sm text-red-600 border border-red-200">{error}</div>}
-      {success && <div className="mb-4 rounded-lg bg-green-50 p-4 text-sm text-green-600 border border-green-200">{success}</div>}
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-600">
+          {success}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
@@ -233,13 +346,15 @@ function SellerDashboard({ session }) {
             type="file"
             accept="image/*"
             multiple
-            onChange={(event) => setImageFiles(Array.from(event.target.files ?? []))}
+            onChange={handleImageChange}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
-          
+
           {imageFiles.length > 0 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-600">Предпросмотр ({imageFiles.length})</p>
+              <p className="mb-2 text-xs font-medium text-slate-600">
+                Предпросмотр ({imageFiles.length}) — загрузка в облако при отправке формы
+              </p>
               <ul className="flex flex-wrap gap-2">
                 {imagePreviewUrls.map((src, index) => (
                   <li
@@ -265,19 +380,19 @@ function SellerDashboard({ session }) {
 
         <div className="space-y-2 pt-2">
           <label className="block text-sm font-medium text-slate-700">Загрузите 3D модель</label>
-          <p className="text-xs text-slate-500">Файл в формате .glb</p>
+          <p className="text-xs text-slate-500">Файл в формате .glb, не более 40 МБ</p>
           <input
             key={`model-${modelInputKey}`}
             type="file"
-            accept=".glb"
-            onChange={(event) => setModelFile(event.target.files?.[0] ?? null)}
+            accept=".glb,model/gltf-binary"
+            onChange={handleModelChange}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
 
           {modelFile && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="min-w-0 truncate text-sm text-slate-700" title={modelFile.name}>
-                {modelFile.name}
+                {modelFile.name} ({(modelFile.size / (1024 * 1024)).toFixed(2)} МБ)
               </span>
               <button
                 type="button"
@@ -288,9 +403,41 @@ function SellerDashboard({ session }) {
               </button>
             </div>
           )}
+
+          {modelPreviewUrl && (
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              {(isModelLoading || downloadProgress) && (
+                <p className="border-b border-slate-200 bg-white px-3 py-2 text-sm font-medium text-blue-700">
+                  {downloadProgress || 'Загрузка модели...'}
+                </p>
+              )}
+              <model-viewer
+                src={modelPreviewUrl}
+                alt="Предпросмотр 3D-модели"
+                camera-controls
+                touch-action="pan-y"
+                auto-rotate
+                shadow-intensity="1"
+                onProgress={onModelProgress}
+                onLoad={onModelLoad}
+                onError={onModelError}
+                style={{
+                  width: '100%',
+                  height: '320px',
+                  background: '#f8fafc',
+                }}
+                className="block w-full"
+              />
+              <p className="px-3 py-2 text-xs text-slate-500">
+                Локальный предпросмотр. В Supabase модель загрузится после нажатия «Создать товар».
+              </p>
+            </div>
+          )}
         </div>
 
-        {isUploadingFile && <p className="text-sm text-blue-700 font-medium">{uploadMessage || 'Загрузка файла...'}</p>}
+        {isUploadingFile && (
+          <p className="text-sm font-medium text-blue-700">{uploadMessage || 'Загрузка файлов...'}</p>
+        )}
 
         <button
           type="submit"
